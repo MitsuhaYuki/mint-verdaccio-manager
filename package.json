@@ -1,0 +1,37 @@
+{
+  "name": "mint-verdaccio",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "fix": "biome check --write ./src",
+    "fix:all": "biome check --write --unsafe ./src",
+    "prepare:runtime": "node scripts/prepare-runtime.js"
+  },
+  "dependencies": {
+    "@ant-design/icons": "6.1.x",
+    "@tauri-apps/api": "2.9.x",
+    "@tauri-apps/plugin-opener": "2.5.x",
+    "ahooks": "3.9.x",
+    "antd": "6.1.x",
+    "react": "19.2.x",
+    "react-dom": "19.2.x",
+    "tailwindcss": "4.1.x"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.3.11",
+    "@tailwindcss/vite": "4.1.x",
+    "@tauri-apps/cli": "2.9.x",
+    "@types/react": "19.2.x",
+    "@types/react-dom": "19.2.x",
+    "@vitejs/plugin-react": "4.7.x",
+    "typescript": "5.8.x",
+    "verdaccio": "6.1.x",
+    "vite": "7.3.x"
+  },
+  "packageManager": "pnpm@10.27.0"
+}

@@ -1,0 +1,16 @@
+@layer theme, base, antd, components, utilities;
+
+@import "tailwindcss";
+
+@theme {
+  /* --titlebar-height: 32px; */
+}
+
+* {
+  scrollbar-width: thin;
+  outline: none;
+}
+
+@utility mx-mono {
+  font-family: "Maple Mono Normal NL", Consolas, sans-serif;
+}
