@@ -160,6 +160,7 @@ async function main() {
   const excludePatterns = [
     '.bin',
     '.cache',
+    '.pnpm',
     '.vite',
     '.vite-temp',
     '@ant-design',
@@ -168,7 +169,6 @@ async function main() {
     '@tauri-apps',
     '@types',
     '@vitejs',
-    '@yao-pkg',
     'ahooks',
     'antd',
     'react',
