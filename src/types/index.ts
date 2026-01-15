@@ -14,7 +14,39 @@ export interface LogEntry {
   message: string
 }
 
-// 私有包信息
+// 私有包版本信息
+export interface PackageVersionInfo {
+  author: {
+    name: string
+  }
+  bin: Record<string, string>
+  bugs: string | Record<string, string>
+  contributors: Array<string | Record<string, unknown>>
+  dependencies: Record<string, string>
+  description: string
+  homepage: string
+  keywords: string[]
+  license: string
+  main: string
+  name: string
+  packageManager: string
+  repository: {
+    type: string
+    url: string
+  }
+  scripts: Record<string, string>
+  version: string
+}
+
+// 私有包详细信息
+export interface PackageDetailInfo {
+  "dist-tags": Record<string, string>
+  name: string
+  time: Record<string, string>
+  versions: Record<string, PackageVersionInfo>
+}
+
+// 私有包列表信息
 export interface PackageInfo {
   name: string
   version: string

@@ -4,7 +4,7 @@ import { App, Button, Card, Descriptions, Empty, Input, Modal, Space, Spin, Tabl
 import type { ColumnsType } from 'antd/es/table'
 import { type FC, useMemo, useState } from 'react'
 import { deletePackage, getPackageDetails, getPackages, getVerdaccioStatus } from '../lib/api'
-import type { PackageInfo, VerdaccioStatus } from '../types'
+import type { PackageDetailInfo, PackageInfo, VerdaccioStatus } from '../types'
 
 const Content: FC = () => {
   const { message, modal } = App.useApp()
@@ -14,7 +14,7 @@ const Content: FC = () => {
   const [searchText, setSearchText] = useState('')
   const [detailVisible, setDetailVisible] = useState(false)
   const [selectedPackage, setSelectedPackage] = useState<PackageInfo | null>(null)
-  const [packageDetail, setPackageDetail] = useState<Record<string, unknown> | null>(null)
+  const [packageDetail, setPackageDetail] = useState<PackageDetailInfo | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
 
   const loadPackages = useMemoizedFn(async () => {
@@ -50,7 +50,8 @@ const Content: FC = () => {
     try {
       if (status?.running) {
         const detail = await getPackageDetails(status.port, pkg.name)
-        setPackageDetail(detail as Record<string, unknown>)
+        console.log('I: setPackageDetail', detail)
+        setPackageDetail(detail as PackageDetailInfo)
       }
     } catch (e) {
       console.error('获取包详情失败:', e)
@@ -234,7 +235,7 @@ const Content: FC = () => {
               <Descriptions.Item label='修改时间'>{selectedPackage.modified || '-'}</Descriptions.Item>
               <Descriptions.Item label='所有版本' span={2}>
                 <div className='flex flex-wrap gap-1'>
-                  {selectedPackage.versions.map(v => (
+                  {Object.keys(packageDetail?.versions || {}).map(v => (
                     <Tag key={v}>{v}</Tag>
                   ))}
                 </div>
