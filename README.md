@@ -26,11 +26,6 @@
 
 ![firewall_2](docs/imgs/firewall2.png)
 
-### 已知问题
-
-- 服务器日志“自动滚动”无效
-- 打包似乎包含了一堆不需要的node_modules
-
 ### 二次开发
 
 ```shell
