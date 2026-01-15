@@ -61,11 +61,12 @@ const Content: FC = () => {
   }, 1000)
 
   // 自动滚动到底部
-  useEffect(() => {
+  // biome-ignore lint/correctness/useExhaustiveDependencies: auto refresh
+    useEffect(() => {
     if (autoScroll && logContainerRef.current) {
       logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight
     }
-  }, [autoScroll])
+  }, [autoScroll, logs])
 
   if (loading) {
     return (
