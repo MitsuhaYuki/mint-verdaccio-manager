@@ -6,11 +6,21 @@
   /* --titlebar-height: 32px; */
 }
 
+@utility mx-mono {
+  font-family: "Maple Mono Normal NL", Consolas, sans-serif;
+}
+
 * {
   scrollbar-width: thin;
   outline: none;
 }
 
-@utility mx-mono {
-  font-family: "Maple Mono Normal NL", Consolas, sans-serif;
+/* disallow textarea resize */
+textarea {
+  resize: none;
+}
+
+/* Override antd content style */
+.ant-tabs-content.ant-tabs-content-top {
+  height: 100%;
 }

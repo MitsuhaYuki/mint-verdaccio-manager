@@ -1,4 +1,4 @@
-import { EditOutlined, FileTextOutlined, ReloadOutlined, SaveOutlined, UndoOutlined } from '@ant-design/icons'
+import { BookOutlined, EditOutlined, FileTextOutlined, ReloadOutlined, SaveOutlined, UndoOutlined, UserOutlined } from '@ant-design/icons'
 import { useAsyncEffect, useMemoizedFn } from 'ahooks'
 import { App, Button, Card, Input, Space, Spin, Tabs, Typography } from 'antd'
 import { type FC, useState } from 'react'
@@ -86,8 +86,8 @@ const Content: FC = () => {
   }
 
   return (
-    <div className='h-full w-full overflow-auto p-4'>
-      <div className='mb-4 flex items-center justify-between'>
+    <div className='flex h-full w-full flex-col overflow-auto p-4'>
+      <div className='mb-4 flex shrink-0 items-center justify-between'>
         <Typography.Title level={3} className='mb-0!'>
           服务器配置
         </Typography.Title>
@@ -107,8 +107,10 @@ const Content: FC = () => {
         </Space>
       </div>
 
-      <Card className='shadow-sm'>
+      <Card className='shrink grow overflow-auto shadow-sm' classNames={{ body: 'h-full w-full pt-2' }}>
         <Tabs
+          className='h-full w-full'
+          classNames={{ content: 'h-full w-full overflow-auto' }}
           items={[
             {
               key: 'editor',
@@ -118,7 +120,7 @@ const Content: FC = () => {
                 </span>
               ),
               children: (
-                <div className='flex flex-col gap-4'>
+                <div className='flex h-full w-full flex-col gap-4'>
                   <div className='flex items-center gap-2'>
                     <FileTextOutlined />
                     <Typography.Text type='secondary'>配置文件路径:</Typography.Text>
@@ -134,8 +136,7 @@ const Content: FC = () => {
                   <Input.TextArea
                     value={config}
                     onChange={e => handleConfigChange(e.target.value)}
-                    autoSize={{ minRows: 20, maxRows: 30 }}
-                    className='mx-mono text-xs'
+                    className='mx-mono h-full text-xs'
                     placeholder='Verdaccio 配置内容...'
                   />
                 </div>
@@ -149,7 +150,7 @@ const Content: FC = () => {
                 </span>
               ),
               children: (
-                <div className='prose prose-sm dark:prose-invert max-w-none'>
+                <div className='prose prose-sm dark:prose-invert h-full w-full max-w-none'>
                   <Typography.Title level={4}>Verdaccio 配置说明</Typography.Title>
 
                   <Typography.Title level={5}>存储配置</Typography.Title>
@@ -207,6 +208,57 @@ const Content: FC = () => {
                   <Typography.Link href='https://verdaccio.org/docs/configuration' target='_blank'>
                     查看完整配置文档 →
                   </Typography.Link>
+                </div>
+              )
+            },
+            {
+              key: 'userguide',
+              label: (
+                <span>
+                  <BookOutlined /> 使用说明
+                </span>
+              ),
+              children: (
+                <div className='prose prose-sm dark:prose-invert h-full w-full max-w-none'>
+                  <Typography.Title level={4}>Verdaccio 使用说明</Typography.Title>
+
+                  <Typography.Title level={5}>用户登录</Typography.Title>
+                  <Typography.Paragraph>
+                    使用<code>npm adduser --registry http://localhost:4873</code>进行注册并登录。<br />
+                    如果你设置了<code>maxuser=-1</code>，则可以先在“用户管理”页面创建一个新用户，然后使用<code>npm login --registry http://localhost:4873</code>登录。<br />
+                    输入命令之后，依据提示输入你的 Verdaccio 用户名、密码，如果为<code>adduser</code>则还需要输入邮箱地址。
+                  </Typography.Paragraph>
+
+                  <Typography.Title level={5}>发布配置</Typography.Title>
+                  <Typography.Paragraph>
+                    在你的<code>package.json</code>文件中，确保添加了以下字段以指定发布到 Verdaccio 服务器：
+                    <pre>
+                      &#123;
+                      <br />
+                      &nbsp; "name": "@your-scope/your-package",
+                      <br />
+                      &nbsp; "version": "1.0.0",
+                      <br />
+                      &nbsp; "publishConfig": &#123;
+                      <br />
+                      &nbsp;&nbsp;&nbsp; "registry": "http://your-verdaccio-server:4873"
+                      <br />
+                      &nbsp; &#125;,
+                      <br />
+                      &#125;
+                    </pre>
+                    这里，<code>@your-scope</code>是你在 Verdaccio 上配置的包作用域，确保它与你在 Verdaccio 配置中的访问控制相匹配。
+                  </Typography.Paragraph>
+                  <Typography.Paragraph>
+                    如果你没有修改过默认配置，则此处没有设置作用域，而是限定了包名为<code>local-</code>开头的所有包在发布时变为私有包，不会被代理到上游仓库。
+                  </Typography.Paragraph>
+
+                  <Typography.Title level={5}>拉取配置</Typography.Title>
+                  <Typography.Paragraph>
+                    如果要使用 Verdaccio 作为你的默认 NPM 注册表，可以运行以下命令：
+                    <pre>npm set registry http://localhost:4873</pre>
+                    这样，所有的 NPM 包安装和发布操作都会默认使用 Verdaccio 服务器。同时此设置还会影响 PNPM 和 Yarn，因为它们也会读取 NPM 的配置。
+                  </Typography.Paragraph>
                 </div>
               )
             }

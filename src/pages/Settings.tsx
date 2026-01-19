@@ -176,13 +176,13 @@ const Content: FC = () => {
           </Typography.Paragraph>
 
           <Space className='mt-4'>
-            <Button type='link' onClick={() => window.open('https://github.com/MitsuhaYuki/mint-verdaccio-manager', '_blank')} className='p-0'>
+            <Button type='link' href='https://github.com/MitsuhaYuki/mint-verdaccio-manager' target='_blank' className='p-0'>
               此程序
             </Button>
-            <Button type='link' onClick={() => window.open('https://verdaccio.org/', '_blank')} className='p-0'>
+            <Button type='link' href='https://verdaccio.org/' target='_blank' className='p-0'>
               Verdaccio 官网
             </Button>
-            <Button type='link' onClick={() => window.open('https://github.com/verdaccio/verdaccio', '_blank')} className='p-0'>
+            <Button type='link' href='https://github.com/verdaccio/verdaccio' target='_blank' className='p-0'>
               GitHub
             </Button>
           </Space>
