@@ -69,6 +69,18 @@ export async function getPackageCountFromApi(port: number): Promise<number> {
   return invoke('get_package_count_from_api', { port })
 }
 
+export async function getCachedPackages(port: number): Promise<PackageInfo[]> {
+  return invoke('get_cached_packages', { port })
+}
+
+export async function deleteCachedPackage(packageName: string): Promise<void> {
+  return invoke('delete_cached_package', { packageName })
+}
+
+export async function deleteAllCachedPackages(port: number, excludePrivate: boolean): Promise<number> {
+  return invoke('delete_all_cached_packages', { port, excludePrivate })
+}
+
 // 设置相关
 export async function getAppSettings(): Promise<AppSettings> {
   return invoke('get_app_settings')

@@ -1,5 +1,6 @@
 import {
   AppstoreOutlined,
+  CloudDownloadOutlined,
   DashboardOutlined,
   FileTextOutlined,
   MenuFoldOutlined,
@@ -14,6 +15,7 @@ import { Button, Layout, Menu, type MenuProps } from 'antd'
 import { type FC, useMemo, useRef, useState } from 'react'
 import { getAppSettings, getVerdaccioStatus, startVerdaccio, syncTrayStatus } from '../lib/api'
 import { MenuKey } from '../types/enum'
+import { CachedPackages } from './CachedPackages'
 import { Config } from './Config'
 import { Dashboard } from './Dashboard'
 import { Logs } from './Logs'
@@ -69,6 +71,11 @@ const Content: FC = () => {
         icon: <AppstoreOutlined />
       },
       {
+        key: MenuKey.CachedPackages,
+        label: '缓存包管理',
+        icon: <CloudDownloadOutlined />
+      },
+      {
         key: MenuKey.Users,
         label: '用户管理',
         icon: <UserOutlined />
@@ -100,6 +107,8 @@ const Content: FC = () => {
         return '管理主页'
       case MenuKey.Packages:
         return '私有包管理'
+      case MenuKey.CachedPackages:
+        return '缓存包管理'
       case MenuKey.Users:
         return '用户管理'
       case MenuKey.Logs:
@@ -119,6 +128,8 @@ const Content: FC = () => {
         return <Dashboard />
       case MenuKey.Packages:
         return <Packages />
+      case MenuKey.CachedPackages:
+        return <CachedPackages />
       case MenuKey.Users:
         return <Users />
       case MenuKey.Logs:

@@ -268,3 +268,78 @@ pub async fn get_package_count_from_api(port: u16) -> Result<usize, String> {
     
     Ok(api_packages.len())
 }
+
+/// 获取私有包名称列表（从 API 读取）
+async fn get_private_package_names(port: u16) -> Result<Vec<String>, String> {
+    let client = reqwest::Client::new();
+    let url = format!("http://localhost:{}/-/verdaccio/data/packages", port);
+    
+    let response = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("请求失败: {}", e))?;
+    
+    if !response.status().is_success() {
+        return Ok(vec![]);
+    }
+    
+    let api_packages: Vec<VerdaccioPackageResponse> = response
+        .json()
+        .await
+        .map_err(|e| format!("解析响应失败: {}", e))?;
+    
+    Ok(api_packages.into_iter().map(|p| p.name).collect())
+}
+
+/// 获取缓存包列表（存储目录中的包减去私有包）
+#[tauri::command]
+pub async fn get_cached_packages(port: u16) -> Result<Vec<PackageInfo>, String> {
+    // 获取所有存储的包
+    let all_packages = get_packages_from_storage().await?;
+    
+    // 获取私有包名称列表
+    let private_names = get_private_package_names(port).await.unwrap_or_default();
+    
+    // 过滤出缓存包（不在私有包列表中的）
+    let cached_packages: Vec<PackageInfo> = all_packages
+        .into_iter()
+        .filter(|p| !private_names.contains(&p.name))
+        .collect();
+    
+    Ok(cached_packages)
+}
+
+/// 删除单个缓存包
+#[tauri::command]
+pub async fn delete_cached_package(package_name: String) -> Result<(), String> {
+    delete_package(package_name).await
+}
+
+/// 删除所有缓存包
+#[tauri::command]
+pub async fn delete_all_cached_packages(port: u16, exclude_private: bool) -> Result<usize, String> {
+    let packages_to_delete = if exclude_private {
+        // 只删除缓存包（排除私有包）
+        get_cached_packages(port).await?
+    } else {
+        // 删除所有包（包括私有包）
+        get_packages_from_storage().await?
+    };
+    
+    let mut deleted_count = 0;
+    let mut errors = Vec::new();
+    
+    for pkg in &packages_to_delete {
+        match delete_package(pkg.name.clone()).await {
+            Ok(_) => deleted_count += 1,
+            Err(e) => errors.push(format!("{}: {}", pkg.name, e)),
+        }
+    }
+    
+    if !errors.is_empty() && deleted_count == 0 {
+        return Err(format!("删除失败: {}", errors.join(", ")));
+    }
+    
+    Ok(deleted_count)
+}
