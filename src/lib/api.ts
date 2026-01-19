@@ -61,8 +61,12 @@ export async function deletePackage(packageName: string): Promise<void> {
   return invoke('delete_package', { packageName })
 }
 
-export async function getPackageCount(): Promise<number> {
-  return invoke('get_package_count')
+export async function getCachedPackageCount(): Promise<number> {
+  return invoke('get_cached_package_count')
+}
+
+export async function getPackageCountFromApi(port: number): Promise<number> {
+  return invoke('get_package_count_from_api', { port })
 }
 
 // 设置相关

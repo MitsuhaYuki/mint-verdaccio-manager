@@ -2,7 +2,7 @@ import { CheckCircleOutlined, CloseCircleOutlined, PlayCircleOutlined, PoweroffO
 import { useAsyncEffect, useInterval, useMemoizedFn } from 'ahooks'
 import { App, Button, Card, Descriptions, Spin, Statistic, Tag, Typography } from 'antd'
 import { type FC, useState } from 'react'
-import { getAppSettings, getPackageCount, getVerdaccioStatus, getVerdaccioVersion, startVerdaccio, stopVerdaccio, syncTrayStatus } from '../lib/api'
+import { getAppSettings, getCachedPackageCount, getPackageCountFromApi, getVerdaccioStatus, getVerdaccioVersion, startVerdaccio, stopVerdaccio, syncTrayStatus } from '../lib/api'
 import type { VerdaccioStatus } from '../types'
 
 const defaultDescStyle = { content: 'items-center' }
@@ -14,6 +14,7 @@ const Content: FC = () => {
   const [status, setStatus] = useState<VerdaccioStatus | null>(null)
   const [version, setVersion] = useState<string>('')
   const [packageCount, setPackageCount] = useState(0)
+  const [cachedPackageCount, setCachedPackageCount] = useState(0)
   const [port, setPort] = useState(4873)
   const [allowLan, setAllowLan] = useState(false)
 
@@ -38,8 +39,13 @@ const Content: FC = () => {
       // 同步托盘状态
       await syncTrayStatus(st.running)
 
+      // 获取缓存包数量（始终可用）
+      const cached = await getCachedPackageCount()
+      setCachedPackageCount(cached)
+
+      // 从 API 获取私有包数量（仅服务运行时）
       if (st.running) {
-        const count = await getPackageCount()
+        const count = await getPackageCountFromApi(st.port)
         setPackageCount(count)
       }
     } catch (e) {
@@ -163,8 +169,9 @@ const Content: FC = () => {
 
         {/* 统计信息卡片 */}
         <Card title='统计信息' className='shadow-sm'>
-          <div className='grid grid-cols-2 gap-4'>
+          <div className='grid grid-cols-3 gap-4'>
             <Statistic title='私有包数量' value={status?.running ? packageCount : '?'} styles={{ content: { color: status?.running ? undefined : '#999' } }} />
+            <Statistic title='缓存包数量' value={cachedPackageCount} />
             <Statistic title='服务状态' value={status?.running ? '在线' : '离线'} styles={{ content: { color: status?.running ? '#52c41a' : '#ff4d4f' } }} />
           </div>
 

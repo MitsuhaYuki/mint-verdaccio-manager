@@ -238,9 +238,33 @@ pub async fn delete_package(package_name: String) -> Result<(), String> {
         .map_err(|e| format!("删除包失败: {}", e))
 }
 
-/// 获取包数量统计
+/// 获取缓存包数量统计（从存储目录读取）
 #[tauri::command]
-pub async fn get_package_count() -> Result<usize, String> {
+pub async fn get_cached_package_count() -> Result<usize, String> {
     let packages = get_packages_from_storage().await?;
     Ok(packages.len())
+}
+
+/// 获取私有包数量（从 API 读取）
+#[tauri::command]
+pub async fn get_package_count_from_api(port: u16) -> Result<usize, String> {
+    let client = reqwest::Client::new();
+    let url = format!("http://localhost:{}/-/verdaccio/data/packages", port);
+    
+    let response = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("请求失败: {}", e))?;
+    
+    if !response.status().is_success() {
+        return Err("API 请求失败".to_string());
+    }
+    
+    let api_packages: Vec<VerdaccioPackageResponse> = response
+        .json()
+        .await
+        .map_err(|e| format!("解析响应失败: {}", e))?;
+    
+    Ok(api_packages.len())
 }
