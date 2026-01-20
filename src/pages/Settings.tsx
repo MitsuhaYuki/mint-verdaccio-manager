@@ -175,7 +175,7 @@ const Content: FC = () => {
             Verdaccio 是一个轻量级的 NPM 私有代理仓库，支持私有包发布和 NPM 包代理缓存功能。
           </Typography.Paragraph>
 
-          <Space className='mt-4'>
+          <Space className='mt-4' size='large'>
             <Button type='link' href='https://github.com/MitsuhaYuki/mint-verdaccio-manager' target='_blank' className='p-0'>
               此程序
             </Button>

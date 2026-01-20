@@ -1,64 +1,63 @@
 import { ClearOutlined, DeleteOutlined, EyeOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons'
 import { useAsyncEffect, useMemoizedFn } from 'ahooks'
 import { App, Button, Card, Descriptions, Dropdown, Empty, Input, Modal, Space, Spin, Table, Tag, Typography } from 'antd'
-import type { ColumnsType } from 'antd/es/table'
-import { type FC, useMemo, useState } from 'react'
-import { deleteAllCachedPackages, deleteCachedPackage, getCachedPackages, getPackageDetails, getVerdaccioStatus } from '../lib/api'
-import type { PackageDetailInfo, PackageInfo, VerdaccioStatus } from '../types'
+import type { ColumnsType, TablePaginationConfig } from 'antd/es/table'
+import { type FC, useState } from 'react'
+import { deletePackage, deletePackages, getPackages, getVerdaccioStatus } from '../lib/api'
+import type { PackageInfo, VerdaccioStatus } from '../types'
 
 const Content: FC = () => {
   const { message, modal } = App.useApp()
   const [loading, setLoading] = useState(true)
   const [packages, setPackages] = useState<PackageInfo[]>([])
+  const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(15)
   const [status, setStatus] = useState<VerdaccioStatus | null>(null)
   const [searchText, setSearchText] = useState('')
   const [detailVisible, setDetailVisible] = useState(false)
   const [selectedPackage, setSelectedPackage] = useState<PackageInfo | null>(null)
-  const [packageDetail, setPackageDetail] = useState<PackageDetailInfo | null>(null)
-  const [detailLoading, setDetailLoading] = useState(false)
   const [deleteAllLoading, setDeleteAllLoading] = useState(false)
 
-  const loadPackages = useMemoizedFn(async () => {
+  const loadPackages = useMemoizedFn(async (currentPage = page, currentPageSize = pageSize) => {
     setLoading(true)
     try {
       const st = await getVerdaccioStatus()
       setStatus(st)
 
       if (st.running) {
-        const pkgs = await getCachedPackages(st.port)
-        setPackages(pkgs)
+        const result = await getPackages(st.port, 'cached', currentPage, currentPageSize)
+        setPackages(result.items)
+        setTotal(result.total)
+        setPage(result.page)
+        setPageSize(result.page_size)
       } else {
         setPackages([])
+        setTotal(0)
       }
     } catch (e) {
       console.error('获取缓存包列表失败:', e)
       message.error(`获取缓存包列表失败: ${e}`)
       setPackages([])
+      setTotal(0)
     } finally {
       setLoading(false)
     }
   })
 
   useAsyncEffect(async () => {
-    await loadPackages()
+    await loadPackages(1, pageSize)
   }, [])
 
-  const handleViewDetail = useMemoizedFn(async (pkg: PackageInfo) => {
+  const handleTableChange = useMemoizedFn((pagination: TablePaginationConfig) => {
+    const newPage = pagination.current || 1
+    const newPageSize = pagination.pageSize || 15
+    loadPackages(newPage, newPageSize)
+  })
+
+  const handleViewDetail = useMemoizedFn((pkg: PackageInfo) => {
     setSelectedPackage(pkg)
     setDetailVisible(true)
-    setDetailLoading(true)
-
-    try {
-      if (status?.running) {
-        const detail = await getPackageDetails(status.port, pkg.name)
-        setPackageDetail(detail as PackageDetailInfo)
-      }
-    } catch (e) {
-      console.error('获取包详情失败:', e)
-      setPackageDetail(null)
-    } finally {
-      setDetailLoading(false)
-    }
   })
 
   const handleDelete = useMemoizedFn((pkg: PackageInfo) => {
@@ -77,7 +76,7 @@ const Content: FC = () => {
       cancelText: '取消',
       onOk: async () => {
         try {
-          await deleteCachedPackage(pkg.name)
+          await deletePackage(pkg.name)
           message.success('删除成功')
           await loadPackages()
         } catch (e) {
@@ -87,11 +86,12 @@ const Content: FC = () => {
     })
   })
 
-  const handleDeleteAll = useMemoizedFn((excludePrivate: boolean) => {
-    const title = excludePrivate ? '删除所有缓存包' : '删除全部包'
-    const content = excludePrivate
-      ? '确定要删除所有缓存包吗？私有包将被保留。'
-      : '确定要删除全部包吗？这将同时删除私有包和缓存包！'
+  const handleDeleteAll = useMemoizedFn((deleteType: 'cached' | 'all') => {
+    const title = deleteType === 'cached' ? '删除所有缓存包' : '删除全部包'
+    const content =
+      deleteType === 'cached'
+        ? '确定要删除所有缓存包吗？私有包将被保留。'
+        : '确定要删除全部包吗？这将同时删除私有包和缓存包！'
 
     modal.confirm({
       title,
@@ -112,9 +112,9 @@ const Content: FC = () => {
 
         setDeleteAllLoading(true)
         try {
-          const count = await deleteAllCachedPackages(status.port, excludePrivate)
+          const count = await deletePackages(status.port, deleteType)
           message.success(`成功删除 ${count} 个包`)
-          await loadPackages()
+          await loadPackages(1, pageSize)
         } catch (e) {
           message.error(`删除失败: ${e}`)
         } finally {
@@ -124,13 +124,17 @@ const Content: FC = () => {
     })
   })
 
-  const filteredPackages = useMemo(() => {
-    if (!searchText) return packages
-    const lower = searchText.toLowerCase()
-    return packages.filter(
-      pkg => pkg.name.toLowerCase().includes(lower) || pkg.description?.toLowerCase().includes(lower) || pkg.author?.toLowerCase().includes(lower)
-    )
-  }, [packages, searchText])
+  // 前端搜索过滤（在当前页数据中）
+  const filteredPackages = searchText
+    ? packages.filter(pkg => {
+      const lower = searchText.toLowerCase()
+      return (
+        pkg.name.toLowerCase().includes(lower) ||
+        pkg.description?.toLowerCase().includes(lower) ||
+        pkg.author?.toLowerCase().includes(lower)
+      )
+    })
+    : packages
 
   const columns: ColumnsType<PackageInfo> = [
     {
@@ -141,8 +145,7 @@ const Content: FC = () => {
         <Typography.Text strong copyable>
           {name}
         </Typography.Text>
-      ),
-      sorter: (a, b) => a.name.localeCompare(b.name)
+      )
     },
     {
       title: '最新版本',
@@ -156,8 +159,7 @@ const Content: FC = () => {
       dataIndex: 'versions',
       key: 'versionsCount',
       width: 80,
-      render: (versions: string[]) => versions.length,
-      sorter: (a, b) => a.versions.length - b.versions.length
+      render: (versions: string[]) => versions.length
     },
     {
       title: '描述',
@@ -191,7 +193,7 @@ const Content: FC = () => {
     }
   ]
 
-  if (loading) {
+  if (loading && packages.length === 0) {
     return (
       <div className='flex h-full w-full items-center justify-center'>
         <Spin size='large' />
@@ -199,7 +201,7 @@ const Content: FC = () => {
     )
   }
 
-  if (!status?.running) {
+  if (!status?.running && !loading) {
     return (
       <div className='flex h-full w-full items-center justify-center'>
         <Empty description='Verdaccio 服务未运行，请先启动服务' />
@@ -208,8 +210,8 @@ const Content: FC = () => {
   }
 
   return (
-    <div className='h-full w-full overflow-auto p-4'>
-      <div className='mb-4 flex items-center justify-between'>
+    <div className='flex h-full w-full flex-col p-4'>
+      <div className='mb-4 flex shrink-0 items-center justify-between'>
         <Typography.Title level={3} className='mb-0!'>
           缓存包管理
         </Typography.Title>
@@ -222,7 +224,7 @@ const Content: FC = () => {
             allowClear
             className='w-64'
           />
-          <Button icon={<ReloadOutlined />} onClick={loadPackages}>
+          <Button icon={<ReloadOutlined />} onClick={() => loadPackages()} loading={loading}>
             刷新
           </Button>
           <Dropdown
@@ -232,18 +234,18 @@ const Content: FC = () => {
                   key: 'cached-only',
                   label: '仅删除缓存包',
                   icon: <ClearOutlined />,
-                  onClick: () => handleDeleteAll(true)
+                  onClick: () => handleDeleteAll('cached')
                 },
                 {
                   key: 'all',
                   label: '删除全部（含私有包）',
                   icon: <DeleteOutlined />,
                   danger: true,
-                  onClick: () => handleDeleteAll(false)
+                  onClick: () => handleDeleteAll('all')
                 }
               ]
             }}
-            disabled={packages.length === 0 || deleteAllLoading}
+            disabled={total === 0 || deleteAllLoading}
           >
             <Button danger icon={<ClearOutlined />} loading={deleteAllLoading}>
               删除全部
@@ -252,17 +254,24 @@ const Content: FC = () => {
         </Space>
       </div>
 
-      <Card className='shadow-sm'>
+      <Card className='flex flex-1 flex-col overflow-hidden shadow-sm'>
         <Table
           columns={columns}
           dataSource={filteredPackages}
           rowKey='name'
           size='small'
+          loading={loading}
+          onChange={handleTableChange}
+          scroll={{ y: 'calc(100vh - 245px)' }}
+          classNames={{ section: 'override-z4v8n' }}
           pagination={{
-            pageSize: 15,
+            current: page,
+            pageSize: pageSize,
+            total: searchText ? filteredPackages.length : total,
             showSizeChanger: true,
             showQuickJumper: true,
-            showTotal: total => `共 ${total} 个缓存包`
+            showTotal: t => `共 ${t} 个缓存包`,
+            pageSizeOptions: [10, 15, 20, 50]
           }}
           locale={{
             emptyText: <Empty description='暂无缓存包' />
@@ -277,63 +286,60 @@ const Content: FC = () => {
         onCancel={() => {
           setDetailVisible(false)
           setSelectedPackage(null)
-          setPackageDetail(null)
         }}
         footer={null}
         width={700}
       >
-        {detailLoading ? (
-          <div className='flex h-40 items-center justify-center'>
-            <Spin />
-          </div>
-        ) : packageDetail ? (
-          <div className='max-h-[60vh] overflow-auto'>
+        {selectedPackage ? (
+          <div className='dark:scheme-dark max-h-[60vh] overflow-auto'>
             <Descriptions column={1} bordered size='small' styles={{ label: { whiteSpace: 'nowrap' } }}>
-              <Descriptions.Item label='包名'>{packageDetail.name}</Descriptions.Item>
+              <Descriptions.Item label='包名'>
+                <Typography.Text copyable>{selectedPackage.name}</Typography.Text>
+              </Descriptions.Item>
               <Descriptions.Item label='最新版本'>
-                <Tag color='green'>{packageDetail['dist-tags']?.latest || '-'}</Tag>
+                <Tag color='green'>{selectedPackage.version}</Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label='描述'>{selectedPackage.description || '-'}</Descriptions.Item>
+              <Descriptions.Item label='作者'>{selectedPackage.author || '-'}</Descriptions.Item>
+              <Descriptions.Item label='许可证'>{selectedPackage.license || '-'}</Descriptions.Item>
+              <Descriptions.Item label='主页'>
+                {selectedPackage.homepage ? (
+                  <Typography.Link href={selectedPackage.homepage} target='_blank'>
+                    {selectedPackage.homepage}
+                  </Typography.Link>
+                ) : (
+                  '-'
+                )}
+              </Descriptions.Item>
+              <Descriptions.Item label='仓库'>
+                {selectedPackage.repository ? (
+                  <Typography.Text copyable className='break-all text-xs'>
+                    {selectedPackage.repository}
+                  </Typography.Text>
+                ) : (
+                  '-'
+                )}
+              </Descriptions.Item>
+              <Descriptions.Item label='关键词'>
+                {selectedPackage.keywords?.length > 0 ? (
+                  <div className='flex flex-wrap gap-1'>
+                    {selectedPackage.keywords.map(kw => (
+                      <Tag key={kw}>{kw}</Tag>
+                    ))}
+                  </div>
+                ) : (
+                  '-'
+                )}
               </Descriptions.Item>
               <Descriptions.Item label='所有版本'>
                 <div className='flex flex-wrap gap-1'>
-                  {Object.keys(packageDetail.versions || {}).map(v => (
+                  {selectedPackage.versions.map(v => (
                     <Tag key={v}>{v}</Tag>
                   ))}
                 </div>
               </Descriptions.Item>
-              <Descriptions.Item label='创建时间'>{packageDetail.time?.created || '-'}</Descriptions.Item>
-              <Descriptions.Item label='最后修改'>{packageDetail.time?.modified || '-'}</Descriptions.Item>
-              {packageDetail.versions?.[packageDetail['dist-tags']?.latest] && (
-                <>
-                  <Descriptions.Item label='描述'>
-                    {packageDetail.versions[packageDetail['dist-tags'].latest]?.description || '-'}
-                  </Descriptions.Item>
-                  <Descriptions.Item label='作者'>
-                    {packageDetail.versions[packageDetail['dist-tags'].latest]?.author?.name || '-'}
-                  </Descriptions.Item>
-                  <Descriptions.Item label='许可证'>
-                    {packageDetail.versions[packageDetail['dist-tags'].latest]?.license || '-'}
-                  </Descriptions.Item>
-                  <Descriptions.Item label='主页'>
-                    {packageDetail.versions[packageDetail['dist-tags'].latest]?.homepage ? (
-                      <Typography.Link
-                        href={packageDetail.versions[packageDetail['dist-tags'].latest].homepage}
-                        target='_blank'
-                      >
-                        {packageDetail.versions[packageDetail['dist-tags'].latest].homepage}
-                      </Typography.Link>
-                    ) : (
-                      '-'
-                    )}
-                  </Descriptions.Item>
-                  <Descriptions.Item label='关键词'>
-                    <div className='flex flex-wrap gap-1'>
-                      {packageDetail.versions[packageDetail['dist-tags'].latest]?.keywords?.map(kw => (
-                        <Tag key={kw}>{kw}</Tag>
-                      )) || '-'}
-                    </div>
-                  </Descriptions.Item>
-                </>
-              )}
+              <Descriptions.Item label='创建时间'>{selectedPackage.created || '-'}</Descriptions.Item>
+              <Descriptions.Item label='修改时间'>{selectedPackage.modified || '-'}</Descriptions.Item>
             </Descriptions>
           </div>
         ) : (

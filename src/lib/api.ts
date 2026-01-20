@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
-import type { AppSettings, LogEntry, PackageInfo, UserInfo, VerdaccioStatus } from '../types'
+import type { AppSettings, LogEntry, PackageInfo, PackageType, PaginatedResult, UserInfo, VerdaccioStatus } from '../types'
 
 // Verdaccio 服务相关
 export async function startVerdaccio(port: number, allowLan: boolean): Promise<VerdaccioStatus> {
@@ -49,36 +49,25 @@ export async function resetConfigToDefault(): Promise<void> {
 }
 
 // 包管理相关
-export async function getPackages(port: number): Promise<PackageInfo[]> {
-  return invoke('get_packages', { port })
+export async function getPackages(
+  port: number,
+  packageType: PackageType,
+  page: number,
+  pageSize: number
+): Promise<PaginatedResult<PackageInfo>> {
+  return invoke('get_packages', { port, packageType, page, pageSize })
 }
 
-export async function getPackageDetails(port: number, packageName: string): Promise<unknown> {
-  return invoke('get_package_details', { port, packageName })
+export async function getPackageCount(port: number, packageType: PackageType): Promise<number> {
+  return invoke('get_package_count', { port, packageType })
 }
 
 export async function deletePackage(packageName: string): Promise<void> {
   return invoke('delete_package', { packageName })
 }
 
-export async function getCachedPackageCount(): Promise<number> {
-  return invoke('get_cached_package_count')
-}
-
-export async function getPackageCountFromApi(port: number): Promise<number> {
-  return invoke('get_package_count_from_api', { port })
-}
-
-export async function getCachedPackages(port: number): Promise<PackageInfo[]> {
-  return invoke('get_cached_packages', { port })
-}
-
-export async function deleteCachedPackage(packageName: string): Promise<void> {
-  return invoke('delete_cached_package', { packageName })
-}
-
-export async function deleteAllCachedPackages(port: number, excludePrivate: boolean): Promise<number> {
-  return invoke('delete_all_cached_packages', { port, excludePrivate })
+export async function deletePackages(port: number, packageType: PackageType): Promise<number> {
+  return invoke('delete_packages', { port, packageType })
 }
 
 // 设置相关

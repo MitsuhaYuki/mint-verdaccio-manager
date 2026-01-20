@@ -1,7 +1,29 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-/// 私有包信息（前端使用）
+/// 包类型过滤
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PackageType {
+    /// 私有包（通过 API 发布的包）
+    Private,
+    /// 缓存包（从上游代理的包）
+    Cached,
+    /// 所有包
+    All,
+}
+
+/// 分页结果
+#[derive(Debug, Clone, Serialize)]
+pub struct PaginatedResult<T> {
+    pub items: Vec<T>,
+    pub total: usize,
+    pub page: usize,
+    pub page_size: usize,
+    pub total_pages: usize,
+}
+
+/// 包信息（前端使用）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PackageInfo {
     pub name: String,
@@ -10,61 +32,17 @@ pub struct PackageInfo {
     pub author: Option<String>,
     pub license: Option<String>,
     pub versions: Vec<String>,
+    pub keywords: Vec<String>,
+    pub homepage: Option<String>,
+    pub repository: Option<String>,
     pub created: Option<String>,
     pub modified: Option<String>,
 }
 
-/// Verdaccio API 返回的包信息（用于反序列化）
+/// Verdaccio API 返回的包信息（用于获取私有包名称列表）
 #[derive(Debug, Clone, Deserialize)]
 struct VerdaccioPackageResponse {
     name: String,
-    version: Option<String>,
-    description: Option<String>,
-    author: Option<serde_json::Value>,
-    license: Option<String>,
-    time: Option<serde_json::Value>,
-}
-
-impl VerdaccioPackageResponse {
-    fn into_package_info(self) -> PackageInfo {
-        // 解析 author 字段（可能是字符串或对象）
-        let author = self.author.and_then(|a| {
-            if let Some(s) = a.as_str() {
-                Some(s.to_string())
-            } else if let Some(obj) = a.as_object() {
-                obj.get("name").and_then(|n| n.as_str()).map(|s| s.to_string())
-            } else {
-                None
-            }
-        });
-
-        // 解析 time 字段
-        let (created, modified) = if let Some(time) = &self.time {
-            if let Some(s) = time.as_str() {
-                (Some(s.to_string()), Some(s.to_string()))
-            } else if let Some(obj) = time.as_object() {
-                (
-                    obj.get("created").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    obj.get("modified").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                )
-            } else {
-                (None, None)
-            }
-        } else {
-            (None, None)
-        };
-
-        PackageInfo {
-            name: self.name,
-            version: self.version.unwrap_or_else(|| "0.0.0".to_string()),
-            description: self.description,
-            author,
-            license: self.license,
-            versions: vec![],  // API 不返回版本列表，后续从详情获取
-            created,
-            modified,
-        }
-    }
 }
 
 /// 获取存储目录
@@ -73,273 +51,372 @@ fn get_storage_path() -> PathBuf {
     home.join(".verdaccio").join("storage")
 }
 
-/// 获取私有包列表
-#[tauri::command]
-pub async fn get_packages(port: u16) -> Result<Vec<PackageInfo>, String> {
-    let client = reqwest::Client::new();
+/// 判断目录是否为有效的包目录（包含 package.json）
+fn is_valid_package_dir(path: &PathBuf) -> bool {
+    path.is_dir() && path.join("package.json").exists()
+}
+
+/// 遍历存储目录，收集所有包目录及其名称（已排序）
+fn collect_package_dirs(storage_path: &PathBuf) -> Result<Vec<(PathBuf, String)>, String> {
+    if !storage_path.exists() {
+        return Ok(vec![]);
+    }
+
+    let mut result = Vec::new();
+    let entries = std::fs::read_dir(storage_path)
+        .map_err(|e| format!("读取存储目录失败: {}", e))?;
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().to_string();
+
+        // 跳过隐藏目录（非 scoped 包）
+        if name.starts_with('.') && !name.starts_with('@') {
+            continue;
+        }
+
+        // 处理 scoped 包 (@scope/package)
+        if name.starts_with('@') {
+            if let Ok(scoped_entries) = std::fs::read_dir(&path) {
+                for scoped_entry in scoped_entries.flatten() {
+                    let scoped_path = scoped_entry.path();
+                    if is_valid_package_dir(&scoped_path) {
+                        let scoped_name = scoped_entry.file_name().to_string_lossy().to_string();
+                        let full_name = format!("{}/{}", name, scoped_name);
+                        result.push((scoped_path, full_name));
+                    }
+                }
+            }
+            continue;
+        }
+
+        // 处理普通包
+        if is_valid_package_dir(&path) {
+            result.push((path, name));
+        }
+    }
+
+    // 自然排序（按名称升序）
+    result.sort_by(|a, b| a.1.to_lowercase().cmp(&b.1.to_lowercase()));
+
+    Ok(result)
+}
+
+/// 获取私有包名称列表（从 Verdaccio API 读取）
+async fn get_private_package_names(port: u16) -> Result<Vec<String>, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
+
     let url = format!("http://localhost:{}/-/verdaccio/data/packages", port);
-    
+
     let response = client
         .get(&url)
         .send()
         .await
         .map_err(|e| format!("请求失败: {}", e))?;
-    
+
     if !response.status().is_success() {
-        // 如果 API 不可用，尝试从存储目录读取
-        return get_packages_from_storage().await;
+        return Ok(vec![]);
     }
-    
-    // 解析 Verdaccio API 响应
+
     let api_packages: Vec<VerdaccioPackageResponse> = response
         .json()
         .await
         .map_err(|e| format!("解析响应失败: {}", e))?;
-    
-    // 转换为 PackageInfo
-    let packages: Vec<PackageInfo> = api_packages
-        .into_iter()
-        .map(|p| p.into_package_info())
-        .collect();
-    
-    Ok(packages)
+
+    Ok(api_packages.into_iter().map(|p| p.name).collect())
 }
 
-/// 从存储目录获取包列表
-async fn get_packages_from_storage() -> Result<Vec<PackageInfo>, String> {
-    let storage_path = get_storage_path();
-    
-    if !storage_path.exists() {
-        return Ok(vec![]);
-    }
-    
-    let mut packages = Vec::new();
-    
-    // 读取存储目录
-    let entries = std::fs::read_dir(&storage_path)
-        .map_err(|e| format!("读取存储目录失败: {}", e))?;
-    
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            let name = entry.file_name().to_string_lossy().to_string();
-            
-            // 跳过隐藏目录和特殊目录
-            if name.starts_with('.') || name.starts_with("@") {
-                // 处理 scoped 包
-                if name.starts_with('@') {
-                    if let Ok(scoped_entries) = std::fs::read_dir(&path) {
-                        for scoped_entry in scoped_entries.flatten() {
-                            let scoped_path = scoped_entry.path();
-                            if scoped_path.is_dir() {
-                                let scoped_name = scoped_entry.file_name().to_string_lossy().to_string();
-                                let full_name = format!("{}/{}", name, scoped_name);
-                                
-                                if let Some(pkg_info) = read_package_json(&scoped_path, &full_name) {
-                                    packages.push(pkg_info);
-                                }
-                            }
-                        }
-                    }
-                }
-                continue;
-            }
-            
-            if let Some(pkg_info) = read_package_json(&path, &name) {
-                packages.push(pkg_info);
-            }
+/// 根据包类型过滤包名称列表
+async fn filter_package_names_by_type(
+    all_names: Vec<String>,
+    package_type: PackageType,
+    port: u16,
+) -> Result<Vec<String>, String> {
+    match package_type {
+        PackageType::All => Ok(all_names),
+        PackageType::Private => {
+            let private_names = get_private_package_names(port).await?;
+            Ok(all_names
+                .into_iter()
+                .filter(|name| private_names.contains(name))
+                .collect())
+        }
+        PackageType::Cached => {
+            let private_names = get_private_package_names(port).await?;
+            Ok(all_names
+                .into_iter()
+                .filter(|name| !private_names.contains(name))
+                .collect())
         }
     }
-    
-    Ok(packages)
 }
 
-/// 读取包的 package.json
-fn read_package_json(path: &PathBuf, name: &str) -> Option<PackageInfo> {
+/// 从 package.json 读取包详情
+fn read_package_info(path: &PathBuf, name: &str) -> Option<PackageInfo> {
     let package_json_path = path.join("package.json");
-    
+
     if !package_json_path.exists() {
         return None;
     }
-    
+
     let content = std::fs::read_to_string(&package_json_path).ok()?;
     let json: serde_json::Value = serde_json::from_str(&content).ok()?;
-    
+
     // 获取版本列表
-    let versions = if let Some(versions_obj) = json.get("versions").and_then(|v| v.as_object()) {
-        versions_obj.keys().cloned().collect()
+    let versions: Vec<String> = if let Some(versions_obj) = json.get("versions").and_then(|v| v.as_object()) {
+        let mut v: Vec<String> = versions_obj.keys().cloned().collect();
+        v.sort_by(|a, b| version_compare(b, a)); // 降序排列
+        v
     } else {
         vec![]
     };
-    
-    let latest = json.get("dist-tags")
+
+    // 获取最新版本
+    let latest = json
+        .get("dist-tags")
         .and_then(|dt| dt.get("latest"))
         .and_then(|v| v.as_str())
         .unwrap_or("0.0.0");
-    
+
+    // 获取最新版本的详细信息
+    let latest_info = json
+        .get("versions")
+        .and_then(|v| v.get(latest));
+
+    // 解析 author 字段（可能是字符串或对象）
+    let author = latest_info
+        .and_then(|info| info.get("author"))
+        .and_then(|a| parse_author(a))
+        .or_else(|| json.get("author").and_then(|a| parse_author(a)));
+
+    // 获取 keywords
+    let keywords: Vec<String> = latest_info
+        .and_then(|info| info.get("keywords"))
+        .and_then(|k| k.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    // 获取 homepage
+    let homepage = latest_info
+        .and_then(|info| info.get("homepage"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    // 获取 repository
+    let repository = latest_info
+        .and_then(|info| info.get("repository"))
+        .and_then(|r| parse_repository(r));
+
+    // 获取 description
+    let description = latest_info
+        .and_then(|info| info.get("description"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .or_else(|| {
+            json.get("description")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        });
+
+    // 获取 license
+    let license = latest_info
+        .and_then(|info| info.get("license"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .or_else(|| {
+            json.get("license")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        });
+
     Some(PackageInfo {
         name: name.to_string(),
         version: latest.to_string(),
-        description: json.get("description").and_then(|v| v.as_str()).map(|s| s.to_string()),
-        author: json.get("author").and_then(|v| v.as_str()).map(|s| s.to_string()),
-        license: json.get("license").and_then(|v| v.as_str()).map(|s| s.to_string()),
+        description,
+        author,
+        license,
         versions,
-        created: json.get("time").and_then(|t| t.get("created")).and_then(|v| v.as_str()).map(|s| s.to_string()),
-        modified: json.get("time").and_then(|t| t.get("modified")).and_then(|v| v.as_str()).map(|s| s.to_string()),
+        keywords,
+        homepage,
+        repository,
+        created: json
+            .get("time")
+            .and_then(|t| t.get("created"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
+        modified: json
+            .get("time")
+            .and_then(|t| t.get("modified"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
     })
 }
 
-/// 获取包详情
-#[tauri::command]
-pub async fn get_package_details(port: u16, package_name: String) -> Result<serde_json::Value, String> {
-    let client = reqwest::Client::new();
-    let url = format!("http://localhost:{}/{}", port, package_name);
-    
-    let response = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| format!("请求失败: {}", e))?;
-    
-    if !response.status().is_success() {
-        return Err("获取包详情失败".to_string());
+/// 解析 author 字段
+fn parse_author(value: &serde_json::Value) -> Option<String> {
+    if let Some(s) = value.as_str() {
+        Some(s.to_string())
+    } else if let Some(obj) = value.as_object() {
+        obj.get("name").and_then(|n| n.as_str()).map(|s| s.to_string())
+    } else {
+        None
     }
-    
-    let details: serde_json::Value = response
-        .json()
-        .await
-        .map_err(|e| format!("解析响应失败: {}", e))?;
-    
-    Ok(details)
+}
+
+/// 解析 repository 字段
+fn parse_repository(value: &serde_json::Value) -> Option<String> {
+    if let Some(s) = value.as_str() {
+        Some(s.to_string())
+    } else if let Some(obj) = value.as_object() {
+        obj.get("url").and_then(|u| u.as_str()).map(|s| s.to_string())
+    } else {
+        None
+    }
+}
+
+/// 简单的版本比较（用于排序）
+fn version_compare(a: &str, b: &str) -> std::cmp::Ordering {
+    let parse_version = |v: &str| -> Vec<u32> {
+        v.split(|c: char| !c.is_ascii_digit())
+            .filter_map(|s| s.parse().ok())
+            .collect()
+    };
+    let va = parse_version(a);
+    let vb = parse_version(b);
+    va.cmp(&vb)
+}
+
+/// 根据包名获取包路径
+fn get_package_path(storage_path: &PathBuf, package_name: &str) -> PathBuf {
+    if package_name.starts_with('@') {
+        let parts: Vec<&str> = package_name.splitn(2, '/').collect();
+        if parts.len() == 2 {
+            storage_path.join(parts[0]).join(parts[1])
+        } else {
+            storage_path.join(package_name)
+        }
+    } else {
+        storage_path.join(package_name)
+    }
+}
+
+// ============= Tauri 命令 =============
+
+/// 获取包列表（分页）
+#[tauri::command]
+pub async fn get_packages(
+    port: u16,
+    package_type: PackageType,
+    page: usize,
+    page_size: usize,
+) -> Result<PaginatedResult<PackageInfo>, String> {
+    let storage_path = get_storage_path();
+    let all_dirs = collect_package_dirs(&storage_path)?;
+
+    // 获取所有包名
+    let all_names: Vec<String> = all_dirs.iter().map(|(_, name)| name.clone()).collect();
+
+    // 根据类型过滤
+    let filtered_names = filter_package_names_by_type(all_names, package_type, port).await?;
+
+    let total = filtered_names.len();
+    let total_pages = if total == 0 {
+        0
+    } else {
+        (total + page_size - 1) / page_size
+    };
+
+    // 计算分页范围
+    let start = (page.saturating_sub(1)) * page_size;
+    let end = (start + page_size).min(total);
+
+    // 只获取当前页的包名
+    let page_names: Vec<String> = filtered_names
+        .into_iter()
+        .skip(start)
+        .take(end - start)
+        .collect();
+
+    // 构建名称到路径的映射
+    let name_to_path: std::collections::HashMap<String, PathBuf> = all_dirs
+        .into_iter()
+        .map(|(path, name)| (name, path))
+        .collect();
+
+    // 读取当前页的包详情
+    let items: Vec<PackageInfo> = page_names
+        .into_iter()
+        .filter_map(|name| {
+            name_to_path
+                .get(&name)
+                .and_then(|path| read_package_info(path, &name))
+        })
+        .collect();
+
+    Ok(PaginatedResult {
+        items,
+        total,
+        page,
+        page_size,
+        total_pages,
+    })
+}
+
+/// 获取包数量
+#[tauri::command]
+pub async fn get_package_count(port: u16, package_type: PackageType) -> Result<usize, String> {
+    let storage_path = get_storage_path();
+    let all_dirs = collect_package_dirs(&storage_path)?;
+
+    let all_names: Vec<String> = all_dirs.into_iter().map(|(_, name)| name).collect();
+    let filtered_names = filter_package_names_by_type(all_names, package_type, port).await?;
+
+    Ok(filtered_names.len())
 }
 
 /// 删除包
 #[tauri::command]
 pub async fn delete_package(package_name: String) -> Result<(), String> {
     let storage_path = get_storage_path();
-    
-    // 处理 scoped 包路径
-    let package_path = if package_name.starts_with('@') {
-        let parts: Vec<&str> = package_name.splitn(2, '/').collect();
-        if parts.len() == 2 {
-            storage_path.join(parts[0]).join(parts[1])
-        } else {
-            storage_path.join(&package_name)
-        }
-    } else {
-        storage_path.join(&package_name)
-    };
-    
+    let package_path = get_package_path(&storage_path, &package_name);
+
     if !package_path.exists() {
         return Err("包不存在".to_string());
     }
-    
-    std::fs::remove_dir_all(&package_path)
-        .map_err(|e| format!("删除包失败: {}", e))
+
+    std::fs::remove_dir_all(&package_path).map_err(|e| format!("删除包失败: {}", e))
 }
 
-/// 获取缓存包数量统计（从存储目录读取）
+/// 批量删除包
 #[tauri::command]
-pub async fn get_cached_package_count() -> Result<usize, String> {
-    let packages = get_packages_from_storage().await?;
-    Ok(packages.len())
-}
+pub async fn delete_packages(port: u16, package_type: PackageType) -> Result<usize, String> {
+    let storage_path = get_storage_path();
+    let all_dirs = collect_package_dirs(&storage_path)?;
 
-/// 获取私有包数量（从 API 读取）
-#[tauri::command]
-pub async fn get_package_count_from_api(port: u16) -> Result<usize, String> {
-    let client = reqwest::Client::new();
-    let url = format!("http://localhost:{}/-/verdaccio/data/packages", port);
-    
-    let response = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| format!("请求失败: {}", e))?;
-    
-    if !response.status().is_success() {
-        return Err("API 请求失败".to_string());
-    }
-    
-    let api_packages: Vec<VerdaccioPackageResponse> = response
-        .json()
-        .await
-        .map_err(|e| format!("解析响应失败: {}", e))?;
-    
-    Ok(api_packages.len())
-}
+    let all_names: Vec<String> = all_dirs.into_iter().map(|(_, name)| name).collect();
+    let names_to_delete = filter_package_names_by_type(all_names, package_type, port).await?;
 
-/// 获取私有包名称列表（从 API 读取）
-async fn get_private_package_names(port: u16) -> Result<Vec<String>, String> {
-    let client = reqwest::Client::new();
-    let url = format!("http://localhost:{}/-/verdaccio/data/packages", port);
-    
-    let response = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| format!("请求失败: {}", e))?;
-    
-    if !response.status().is_success() {
-        return Ok(vec![]);
-    }
-    
-    let api_packages: Vec<VerdaccioPackageResponse> = response
-        .json()
-        .await
-        .map_err(|e| format!("解析响应失败: {}", e))?;
-    
-    Ok(api_packages.into_iter().map(|p| p.name).collect())
-}
-
-/// 获取缓存包列表（存储目录中的包减去私有包）
-#[tauri::command]
-pub async fn get_cached_packages(port: u16) -> Result<Vec<PackageInfo>, String> {
-    // 获取所有存储的包
-    let all_packages = get_packages_from_storage().await?;
-    
-    // 获取私有包名称列表
-    let private_names = get_private_package_names(port).await.unwrap_or_default();
-    
-    // 过滤出缓存包（不在私有包列表中的）
-    let cached_packages: Vec<PackageInfo> = all_packages
-        .into_iter()
-        .filter(|p| !private_names.contains(&p.name))
-        .collect();
-    
-    Ok(cached_packages)
-}
-
-/// 删除单个缓存包
-#[tauri::command]
-pub async fn delete_cached_package(package_name: String) -> Result<(), String> {
-    delete_package(package_name).await
-}
-
-/// 删除所有缓存包
-#[tauri::command]
-pub async fn delete_all_cached_packages(port: u16, exclude_private: bool) -> Result<usize, String> {
-    let packages_to_delete = if exclude_private {
-        // 只删除缓存包（排除私有包）
-        get_cached_packages(port).await?
-    } else {
-        // 删除所有包（包括私有包）
-        get_packages_from_storage().await?
-    };
-    
     let mut deleted_count = 0;
     let mut errors = Vec::new();
-    
-    for pkg in &packages_to_delete {
-        match delete_package(pkg.name.clone()).await {
+
+    for name in &names_to_delete {
+        let package_path = get_package_path(&storage_path, name);
+        match std::fs::remove_dir_all(&package_path) {
             Ok(_) => deleted_count += 1,
-            Err(e) => errors.push(format!("{}: {}", pkg.name, e)),
+            Err(e) => errors.push(format!("{}: {}", name, e)),
         }
     }
-    
+
     if !errors.is_empty() && deleted_count == 0 {
         return Err(format!("删除失败: {}", errors.join(", ")));
     }
-    
+
     Ok(deleted_count)
 }

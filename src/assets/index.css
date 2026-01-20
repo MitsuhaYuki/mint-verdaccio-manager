@@ -20,7 +20,14 @@ textarea {
   resize: none;
 }
 
-/* Override antd content style */
+/* override: antd content style */
 .ant-tabs-content.ant-tabs-content-top {
   height: 100%;
+}
+
+/* override: disable antd-table scroll-x */
+.override-z4v8n {
+  .ant-table-body {
+    padding-right: 8px;
+  }
 }
