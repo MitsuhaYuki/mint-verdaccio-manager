@@ -254,7 +254,7 @@ const Content: FC = () => {
         </Space>
       </div>
 
-      <Card className='flex flex-1 flex-col overflow-hidden shadow-sm'>
+      <Card className='flex flex-col overflow-hidden shadow-sm'>
         <Table
           columns={columns}
           dataSource={filteredPackages}
