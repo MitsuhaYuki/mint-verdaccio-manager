@@ -4,9 +4,15 @@ use tauri::{
     image::Image,
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Manager,
+    Emitter, Manager,
 };
 use tools::VerdaccioProcess;
+
+#[derive(Clone, serde::Serialize)]
+struct SingleInstancePayload {
+    args: Vec<String>,
+    cwd: String,
+}
 
 /// 托盘图标 PNG 数据
 const TRAY_ICON_RUNNING: &[u8] = include_bytes!("../icons/tray-running.png");
@@ -53,6 +59,19 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_single_instance::init(|app, argv, cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+            let _ = app.emit(
+                "single-instance",
+                SingleInstancePayload {
+                    args: argv,
+                    cwd,
+                },
+            );
+        }))
         .manage(VerdaccioProcess::default())
         .setup(|app| {
             // 创建托盘菜单
