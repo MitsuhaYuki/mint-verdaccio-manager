@@ -30,16 +30,18 @@ const Content: FC = () => {
       const settings = await getAppSettings()
       setAllowLan(settings.allow_lan)
       // 如果服务运行中，使用当前运行端口；否则使用设置中的端口
-      if (st.running) {
+      if (st.running !== 'not_running') {
         setPort(st.port)
 
-        // 获取包数量（需要服务运行）
-        const [privateCount, cachedCount] = await Promise.all([
-          getPackageCount(st.port, 'private'),
-          getPackageCount(st.port, 'cached')
-        ])
-        setPrivatePackageCount(privateCount)
-        setCachedPackageCount(cachedCount)
+        // 获取包数量（需要服务运行且已准备好）
+        if (st.running === 'running') {
+          const [privateCount, cachedCount] = await Promise.all([
+            getPackageCount(st.port, 'private'),
+            getPackageCount(st.port, 'cached')
+          ])
+          setPrivatePackageCount(privateCount)
+          setCachedPackageCount(cachedCount)
+        }
       } else {
         setPort(settings.default_port)
         setPrivatePackageCount(0)
@@ -123,9 +125,13 @@ const Content: FC = () => {
         {/* 服务状态卡片 */}
         <Card title='服务状态' className='shadow-sm'>
           <div className='mb-4 flex items-center gap-2'>
-            {status?.running ? (
+            {status?.running === 'running' ? (
               <Tag icon={<CheckCircleOutlined />} color='success' className='text-base'>
                 运行中
+              </Tag>
+            ) : status?.running === 'starting' ? (
+              <Tag icon={<ReloadOutlined spin />} color='processing' className='text-base'>
+                启动中
               </Tag>
             ) : (
               <Tag icon={<CloseCircleOutlined />} color='error' className='text-base'>
@@ -155,7 +161,7 @@ const Content: FC = () => {
           </Descriptions>
 
           <div className='mt-4 flex gap-2'>
-            {status?.running ? (
+            {status?.running !== 'not_running' ? (
               <Button type='primary' danger icon={<PoweroffOutlined />} loading={actionLoading} onClick={handleStop}>
                 停止服务
               </Button>
@@ -170,16 +176,20 @@ const Content: FC = () => {
         {/* 统计信息卡片 */}
         <Card title='统计信息' className='shadow-sm'>
           <div className='grid grid-cols-3 gap-4'>
-            <Statistic title='私有包数量' value={status?.running ? privatePackageCount : '?'} styles={{ content: { color: status?.running ? undefined : '#999' } }} />
-            <Statistic title='缓存包数量' value={status?.running ? cachedPackageCount : '?'} styles={{ content: { color: status?.running ? undefined : '#999' } }} />
-            <Statistic title='服务状态' value={status?.running ? '在线' : '离线'} styles={{ content: { color: status?.running ? '#52c41a' : '#ff4d4f' } }} />
+            <Statistic title='私有包数量' value={status?.running === 'running' ? privatePackageCount : '?'} styles={{ content: { color: status?.running === 'running' ? undefined : '#999' } }} />
+            <Statistic title='缓存包数量' value={status?.running === 'running' ? cachedPackageCount : '?'} styles={{ content: { color: status?.running === 'running' ? undefined : '#999' } }} />
+            <Statistic 
+              title='服务状态' 
+              value={status?.running === 'running' ? '在线' : (status?.running === 'starting' ? '启动中' : '离线')} 
+              styles={{ content: { color: status?.running === 'running' ? '#52c41a' : (status?.running === 'starting' ? '#1890ff' : '#ff4d4f') } }} 
+            />
           </div>
 
-          {status?.running && (
+          {status?.running !== 'not_running' && (
             <div className='mt-4 flex flex-col gap-2'>
               <div>
                 <Typography.Text type='secondary'>访问地址: </Typography.Text>
-                <Typography.Link href={`http://localhost:${port}`} target='_blank' copyable>
+                <Typography.Link href={`http://localhost:${port}`} target='_blank' copyable disabled={status?.running !== 'running'}>
                   http://localhost:{port}
                 </Typography.Link>
               </div>

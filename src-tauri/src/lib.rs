@@ -6,7 +6,7 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Emitter, Manager,
 };
-use tools::VerdaccioProcess;
+use tools::{VerdaccioProcess, VerdaccioRunningState};
 
 #[derive(Clone, serde::Serialize)]
 struct SingleInstancePayload {
@@ -43,8 +43,9 @@ fn update_tray_icon(app: &tauri::AppHandle, running: bool) {
 
 /// 同步检查 Verdaccio 状态并更新托盘
 #[tauri::command]
-async fn sync_tray_status(app: tauri::AppHandle, running: bool) -> Result<(), String> {
-    update_tray_icon(&app, running);
+async fn sync_tray_status(app: tauri::AppHandle, running: VerdaccioRunningState) -> Result<(), String> {
+    let is_online = running == VerdaccioRunningState::Running || running == VerdaccioRunningState::Starting;
+    update_tray_icon(&app, is_online);
     Ok(())
 }
 

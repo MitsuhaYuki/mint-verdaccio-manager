@@ -13,10 +13,19 @@ pub struct LogEntry {
     pub message: String,
 }
 
+/// Verdaccio 运行状态
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum VerdaccioRunningState {
+    NotRunning,
+    Starting,
+    Running,
+}
+
 /// Verdaccio 服务状态
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VerdaccioStatus {
-    pub running: bool,
+    pub running: VerdaccioRunningState,
     pub port: u16,
     pub pid: Option<u32>,
     pub storage_path: String,
@@ -321,7 +330,7 @@ pub async fn start_verdaccio(
     });
 
     Ok(VerdaccioStatus {
-        running: true,
+        running: VerdaccioRunningState::Starting,
         port,
         pid: Some(pid),
         storage_path: get_storage_path().to_string_lossy().to_string(),
@@ -354,6 +363,22 @@ pub async fn stop_verdaccio(process: State<'_, VerdaccioProcess>) -> Result<(), 
     Ok(())
 }
 
+/// 检查 Verdaccio API 是否就绪
+async fn check_api_ready(port: u16) -> bool {
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_millis(500))
+        .build() {
+            Ok(c) => c,
+            Err(_) => return false,
+        };
+
+    let url = format!("http://localhost:{}/-/verdaccio/data/packages", port);
+    match client.get(&url).send().await {
+        Ok(_) => true,
+        Err(_) => false,
+    }
+}
+
 /// 获取 Verdaccio 状态
 #[tauri::command]
 pub async fn get_verdaccio_status(
@@ -361,7 +386,17 @@ pub async fn get_verdaccio_status(
 ) -> Result<VerdaccioStatus, String> {
     let port = *process.port.lock().map_err(|e| e.to_string())?;
     let pid = *process.pid.lock().map_err(|e| e.to_string())?;
-    let running = process.check_running();
+    let is_running = process.check_running();
+
+    let running = if is_running {
+        if check_api_ready(port).await {
+            VerdaccioRunningState::Running
+        } else {
+            VerdaccioRunningState::Starting
+        }
+    } else {
+        VerdaccioRunningState::NotRunning
+    };
 
     Ok(VerdaccioStatus {
         running,

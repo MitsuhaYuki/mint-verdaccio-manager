@@ -1,6 +1,9 @@
+// Verdaccio 运行状态
+export type VerdaccioRunningStatus = 'not_running' | 'starting' | 'running'
+
 // Verdaccio 服务状态
 export interface VerdaccioStatus {
-  running: boolean
+  running: VerdaccioRunningStatus
   port: number
   pid: number | null
   storage_path: string

@@ -46,7 +46,7 @@ const Content: FC = () => {
       if (settings.auto_start_verdaccio) {
         // 先检查 Verdaccio 是否已经在运行
         const status = await getVerdaccioStatus()
-        if (!status.running) {
+        if (status.running === 'not_running') {
           // 自动启动 Verdaccio（使用设置中的端口和局域网配置）
           const result = await startVerdaccio(settings.default_port, settings.allow_lan)
           await syncTrayStatus(result.running)

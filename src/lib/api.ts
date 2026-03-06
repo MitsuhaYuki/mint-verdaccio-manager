@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
-import type { AppSettings, LogEntry, PackageInfo, PackageType, PaginatedResult, UserInfo, VerdaccioStatus } from '../types'
+import type { AppSettings, LogEntry, PackageInfo, PackageType, PaginatedResult, UserInfo, VerdaccioRunningStatus, VerdaccioStatus } from '../types'
 
 // Verdaccio 服务相关
 export async function startVerdaccio(port: number, allowLan: boolean): Promise<VerdaccioStatus> {
@@ -88,7 +88,7 @@ export async function getAutoStartStatus(): Promise<boolean> {
 }
 
 // 托盘相关
-export async function syncTrayStatus(running: boolean): Promise<void> {
+export async function syncTrayStatus(running: VerdaccioRunningStatus): Promise<void> {
   return invoke('sync_tray_status', { running })
 }
 

@@ -24,7 +24,7 @@ const Content: FC = () => {
       const st = await getVerdaccioStatus()
       setStatus(st)
 
-      if (st.running) {
+      if (st.running === 'running') {
         const result = await getPackages(st.port, 'private', currentPage, currentPageSize)
         setPackages(result.items)
         setTotal(result.total)
@@ -163,11 +163,13 @@ const Content: FC = () => {
     }
   ]
 
-  if (!status?.running && !loading) {
+  if (status?.running !== 'running' && !loading) {
     return (
       <div className='flex h-full w-full flex-col items-center justify-center gap-4 p-4'>
-        <Empty description='Verdaccio 服务未运行' />
-        <Typography.Text type='secondary'>请先启动 Verdaccio 服务后再管理私有包</Typography.Text>
+        <Empty description={status?.running === 'starting' ? 'Verdaccio 服务正在启动中...' : 'Verdaccio 服务未运行'} />
+        <Typography.Text type='secondary'>
+          {status?.running === 'starting' ? '请稍候，待服务就绪后再进行管理' : '请先启动 Verdaccio 服务后再管理私有包'}
+        </Typography.Text>
       </div>
     )
   }
