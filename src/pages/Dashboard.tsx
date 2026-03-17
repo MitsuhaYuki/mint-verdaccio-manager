@@ -41,15 +41,15 @@ const Content: FC = () => {
           ])
           setPrivatePackageCount(privateCount)
           setCachedPackageCount(cachedCount)
+
+          // 同步托盘状态
+          await syncTrayStatus(st.running)
         }
       } else {
         setPort(settings.default_port)
         setPrivatePackageCount(0)
         setCachedPackageCount(0)
       }
-
-      // 同步托盘状态
-      await syncTrayStatus(st.running)
     } catch (e) {
       console.error('获取状态失败:', e)
     } finally {
@@ -178,10 +178,10 @@ const Content: FC = () => {
           <div className='grid grid-cols-3 gap-4'>
             <Statistic title='私有包数量' value={status?.running === 'running' ? privatePackageCount : '?'} styles={{ content: { color: status?.running === 'running' ? undefined : '#999' } }} />
             <Statistic title='缓存包数量' value={status?.running === 'running' ? cachedPackageCount : '?'} styles={{ content: { color: status?.running === 'running' ? undefined : '#999' } }} />
-            <Statistic 
-              title='服务状态' 
-              value={status?.running === 'running' ? '在线' : (status?.running === 'starting' ? '启动中' : '离线')} 
-              styles={{ content: { color: status?.running === 'running' ? '#52c41a' : (status?.running === 'starting' ? '#1890ff' : '#ff4d4f') } }} 
+            <Statistic
+              title='服务状态'
+              value={status?.running === 'running' ? '在线' : (status?.running === 'starting' ? '启动中' : '离线')}
+              styles={{ content: { color: status?.running === 'running' ? '#52c41a' : (status?.running === 'starting' ? '#1890ff' : '#ff4d4f') } }}
             />
           </div>
 

@@ -216,11 +216,10 @@ log:
     Ok(())
 }
 
-/// 启动 Verdaccio 服务（使用 Node.js sidecar + Verdaccio 资源）
-#[tauri::command]
-pub async fn start_verdaccio(
-    app: AppHandle,
-    process: State<'_, VerdaccioProcess>,
+/// 启动 Verdaccio 服务（内部函数，可从 setup 或 command 调用）
+pub async fn start_verdaccio_internal(
+    app: &AppHandle,
+    process: &VerdaccioProcess,
     port: u16,
     allow_lan: bool,
 ) -> Result<VerdaccioStatus, String> {
@@ -238,7 +237,7 @@ pub async fn start_verdaccio(
     }
 
     let config_path = get_config_path();
-    let verdaccio_entry = get_verdaccio_entry(&app)?;
+    let verdaccio_entry = get_verdaccio_entry(app)?;
 
     process.add_log("INFO", format!("正在启动 Verdaccio..."));
     process.add_log("INFO", format!("Verdaccio 入口: {}", verdaccio_entry.display()));
@@ -336,6 +335,17 @@ pub async fn start_verdaccio(
         storage_path: get_storage_path().to_string_lossy().to_string(),
         config_path: config_path.to_string_lossy().to_string(),
     })
+}
+
+/// 启动 Verdaccio 服务（使用 Node.js sidecar + Verdaccio 资源）
+#[tauri::command]
+pub async fn start_verdaccio(
+    app: AppHandle,
+    process: State<'_, VerdaccioProcess>,
+    port: u16,
+    allow_lan: bool,
+) -> Result<VerdaccioStatus, String> {
+    start_verdaccio_internal(&app, &process, port, allow_lan).await
 }
 
 /// 停止 Verdaccio 服务

@@ -6,7 +6,7 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Emitter, Manager,
 };
-use tools::{VerdaccioProcess, VerdaccioRunningState};
+use tools::{VerdaccioProcess, VerdaccioRunningState, get_app_settings, start_verdaccio_internal};
 
 #[derive(Clone, serde::Serialize)]
 struct SingleInstancePayload {
@@ -123,6 +123,23 @@ pub fn run() {
                     }
                 })
                 .build(app)?;
+
+            // 检查是否需要自动启动 Verdaccio
+            let app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                if let Ok(settings) = get_app_settings().await {
+                    if settings.auto_start_verdaccio {
+                        if let Some(process) = app_handle.try_state::<VerdaccioProcess>() {
+                            let _ = start_verdaccio_internal(
+                                &app_handle,
+                                &process,
+                                settings.default_port,
+                                settings.allow_lan,
+                            ).await;
+                        }
+                    }
+                }
+            });
 
             Ok(())
         })

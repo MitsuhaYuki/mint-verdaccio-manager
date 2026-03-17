@@ -12,8 +12,7 @@ import {
 import { getVersion } from '@tauri-apps/api/app'
 import { useAsyncEffect } from 'ahooks'
 import { Button, Layout, Menu, type MenuProps } from 'antd'
-import { type FC, useMemo, useRef, useState } from 'react'
-import { getAppSettings, getVerdaccioStatus, startVerdaccio, syncTrayStatus } from '../lib/api'
+import { type FC, useMemo, useState } from 'react'
 import { MenuKey } from '../types/enum'
 import { CachedPackages } from './CachedPackages'
 import { Config } from './Config'
@@ -29,33 +28,11 @@ const Content: FC = () => {
   const [collapsed, setCollapsed] = useState(false)
   const [selectedKey, setSelectedKey] = useState(MenuKey.Dashboard)
   const [version, setVersion] = useState<string>('')
-  const initRef = useRef(false)
 
   useAsyncEffect(async () => {
     // 获取版本号
     const v = await getVersion()
     setVersion(`v${v}`)
-
-    // 防止重复初始化
-    if (initRef.current) return
-    initRef.current = true
-
-    // 检查是否需要自动启动 Verdaccio
-    try {
-      const settings = await getAppSettings()
-      if (settings.auto_start_verdaccio) {
-        // 先检查 Verdaccio 是否已经在运行
-        const status = await getVerdaccioStatus()
-        if (status.running === 'not_running') {
-          // 自动启动 Verdaccio（使用设置中的端口和局域网配置）
-          const result = await startVerdaccio(settings.default_port, settings.allow_lan)
-          await syncTrayStatus(result.running)
-          console.log('自动启动 Verdaccio 成功')
-        }
-      }
-    } catch (e) {
-      console.error('自动启动 Verdaccio 失败:', e)
-    }
   }, [])
 
   const items: MenuItem[] = useMemo(() => {
